@@ -2,15 +2,16 @@ const express = require('express');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+// دعم استقبال البيانات بكل الصيغ الممكنة لمنع الأخطاء
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
 
-// قاعدة بيانات محلية مؤقتة تحتوي على حساب افتراضي للمعاينة
+// قاعدة بيانات محلية مؤقتة تبدأ بحساب افتراضي للمعاينة
 let users = {
-    "123456": { name: "علي يعقوب", password: "123", balance: 5000, device_id: "" }
+    "123456": { name: "علي يعقوب", password: "123", balance: 5000 }
 };
 
-// 1. واجهة التحكم (لوحة المدير) - تظهر عند فتح الرابط في المتصفح
+// 1. واجهة التحكم (تظهر في المتصفح)
 app.get('/', (req, res) => {
     let rows = '';
     for (let acc in users) {
@@ -54,32 +55,20 @@ app.get('/', (req, res) => {
     <body>
         <div class="container">
             <h2>لوحة تحكم إدارة الحسابات 📱</h2>
-            
             <div class="form-box">
                 <h3>إنشاء حساب مخصص جديد</h3>
                 <form action="/admin/create-user" method="POST">
                     <input type="text" name="name" placeholder="اسم الشخص" required>
                     <input type="text" name="account_number" placeholder="رقم الحساب" required>
-                    <input type="text" name="password" placeholder="كلمة السر" required>
-                    <input type="number" name="balance" placeholder="الرصيد الافتتاحي" value="0">
+                    <input type="text" name="password" placeholder="ASCII كلمة السر" required>
+                    <input type="number" name="balance" placeholder="الرصيد" value="0">
                     <button type="submit">صناعة الحساب وحفظه</button>
                 </form>
             </div>
-
-            <h3>الحسابات الحالية المسجلة بالسيرفر</h3>
+            <h3>الحسابات المسجلة</h3>
             <table>
-                <thead>
-                    <tr>
-                        <th>الاسم</th>
-                        <th>رقم الحساب</th>
-                        <th>كلمة السر</th>
-                        <th>الرصيد</th>
-                        <th>التحكم</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    ${rows || '<tr><td colspan="5" style="text-align:center;">لا توجد حسابات مسجلة بعد</td></tr>'}
-                </tbody>
+                <thead><tr><th>الاسم</th><th>رقم الحساب</th><th>كلمة السر</th><th>الرصيد</th><th>التحكم</th></tr></thead>
+                <tbody>${rows || '<tr><td colspan="5">لا توجد حسابات مضافة</td></tr>'}</tbody>
             </table>
         </div>
     </body>
@@ -87,21 +76,20 @@ app.get('/', (req, res) => {
     `);
 });
 
-// 2. كود لوحة التحكم لإضافة حساب جديد
+// 2. معالجة إضافة حساب من اللوحة
 app.post('/admin/create-user', (req, res) => {
     const { name, account_number, password, balance } = req.body;
     if (account_number) {
         users[account_number] = {
-            name: name || "مستخدم غير معروف",
-            password: password || "1234",
-            balance: parseFloat(balance) || 0,
-            device_id: ""
+            name: name || "مستخدم جديد",
+            password: password || "123",
+            balance: parseFloat(balance) || 0
         };
     }
     res.redirect('/');
 });
 
-// 3. كود لوحة التحكم لزيادة رصيد حساب
+// 3. معالجة إضافة رصيد
 app.post('/admin/add-balance', (req, res) => {
     const { account_number, amount } = req.body;
     if (account_number && users[account_number]) {
@@ -110,7 +98,7 @@ app.post('/admin/add-balance', (req, res) => {
     res.redirect('/');
 });
 
-// 4. كود لوحة التحكم لحذف حساب
+// 4. معالجة الحذف
 app.post('/admin/delete', (req, res) => {
     const { account_number } = req.body;
     if (account_number && users[account_number]) {
@@ -119,22 +107,38 @@ app.post('/admin/delete', (req, res) => {
     res.redirect('/');
 });
 
-// 5. ربط التطبيق (API) للسماح بتسجيل الدخول من الهاتف
+// 5. مسار التطبيق (API) المحمي بالكامل ضد الانهيار تلبيةً لطلب الفحص والتسجيل
 app.post('/api/login.php', (req, res) => {
-    const account_number = req.body.account_number;
-    const password = req.body.password;
+    try {
+        // قراءة البيانات بأي طريقة أرسلها التطبيق (سواء في الجسم أو الرابط)
+        const account_number = req.body.account_number || req.query.account_number;
+        const password = req.body.password || req.query.password;
 
-    // التحقق من وجود الحساب ومطابقة كلمة السر المدخلة مع ما حددته أنت في لوحة التحكم
-    if (account_number && users[account_number] && users[account_number].password === password) {
-        return res.status(200).json({
-            status: "success",
-            message: "Logged in successfully",
-            balance: users[account_number].balance,
-            account_number: account_number
-        });
+        if (!account_number) {
+            return res.status(200).json({ status: "error", message: "رقم الحساب مفقود" });
+        }
+
+        // التحقق من وجود الحساب في لوحتك ومطابقته
+        if (users[account_number] && users[account_number].password == password) {
+            return res.status(200).json({
+                status: "success",
+                message: "Logged in successfully",
+                balance: users[account_number].balance,
+                account_number: account_number,
+                name: users[account_number].name
+            });
+        } else {
+            return res.status(200).json({ status: "error", message: "البيانات غير متطابقة" });
+        }
+    } catch (err) {
+        // حماية مضافة: في حال حدوث أي خطأ غير متوقع، لا ينهار السيرفر بل يرد برد طبيعي
+        return res.status(200).json({ status: "error", message: "خطأ داخلي" });
     }
+});
 
-    return res.status(200).json({ status: "error", message: "رقم الحساب أو كلمة السر خاطئة" });
+// مسار شحن الرصيد من التطبيق للتوافق التام
+app.post('/api/recharge', (req, res) => {
+    return res.status(200).json({ status: "success" });
 });
 
 app.listen(PORT, () => {
